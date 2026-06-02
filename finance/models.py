@@ -8,6 +8,27 @@ import uuid
 from people.models import Supporter, MagazineSubscription
 
 
+class CharityBankAccount(models.Model):
+    class ParserType(models.TextChoices):
+        FEDERAL_BANK = "FEDERAL", _("Federal Bank")
+        PAYPAL = "PAYPAL", _("PayPal")
+        VANCO = "VANCO", _("Vanco")
+        BANK_OF_AMERICA = "BOA", _("Bank of America")
+        NRI = "NRI", _("NRI Account")
+
+    name = models.CharField(max_length=100)  # e.g., "Federal Bank Savings"
+    account_number = models.CharField(max_length=50, blank=True)
+    currency = models.CharField(max_length=3, default="INR")
+    parser_type = models.CharField(max_length=50, choices=ParserType.choices)
+    is_active = models.BooleanField(
+        default=True,
+        help_text=_("Uncheck to hide closed accounts from the upload menu."),
+    )
+
+    def __str__(self):
+        return f"{self.name} - {self.account_number} ({self.currency})"
+
+
 class StatementImportBatch(models.Model):
     class Status(models.TextChoices):
         PENDING = "PENDING", _("Pending Processing")
@@ -16,6 +37,13 @@ class StatementImportBatch(models.Model):
 
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
+    )
+    bank_account = models.ForeignKey(
+        CharityBankAccount,
+        on_delete=models.PROTECT,
+        related_name="import_batches",
+        null=True,
+        blank=True,
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
     file_reference = models.FileField(upload_to="bank_statements/%Y/%m/")
