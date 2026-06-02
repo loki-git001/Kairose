@@ -1,0 +1,62 @@
+{% extends "finance/base.html" %}
+
+{% block content %}
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Transaction Details</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Date</dt>
+                    <dd class="col-sm-8">{{ transaction.transaction_date|date:"Y-m-d" }}</dd>
+                    
+                    <dt class="col-sm-4">Bank Ref</dt>
+                    <dd class="col-sm-8">{{ transaction.bank_reference }}</dd>
+                    
+                    <dt class="col-sm-4">Amount</dt>
+                    <dd class="col-sm-8 fw-bold">{{ transaction.amount }}</dd>
+                    
+                    <dt class="col-sm-4">Extracted Name</dt>
+                    <dd class="col-sm-8">{{ transaction.extracted_name|default:"N/A" }}</dd>
+                    
+                    <dt class="col-sm-4">Narration</dt>
+                    <dd class="col-sm-8"><small>{{ transaction.raw_narration }}</small></dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Match to Supporter</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    {% for field in form %}
+                    <div class="mb-3">
+                        <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.help_text %}
+                        <div class="form-text">{{ field.help_text }}</div>
+                        {% endif %}
+                        {% for error in field.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'finance:pending_transactions' %}" class="btn btn-outline-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">Confirm Match</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
