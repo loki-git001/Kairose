@@ -3,6 +3,8 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.urls import reverse_lazy
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
 from django.views.generic import CreateView, FormView, ListView
 
 from .forms import StatementUploadForm, TransactionMatchForm
@@ -15,12 +17,13 @@ from .models import (
 from .services import process_statement_batch
 
 
-class AdminRequiredMixin(UserPassesTestMixin):
+class AdminRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_active and (self.request.user.is_staff or self.request.user.is_superuser)
 
 
 
+@method_decorator(never_cache, name='dispatch')
 class StatementUploadView(AdminRequiredMixin, FormView):
     """
     Admin-only view to upload bank statements.
@@ -63,6 +66,7 @@ class StatementUploadView(AdminRequiredMixin, FormView):
         return super().form_valid(form)
 
 
+@method_decorator(never_cache, name='dispatch')
 class AgentPendingTransactionsView(LoginRequiredMixin, ListView):
     """
     Agents view all system-wide transactions that are unmatched or ambiguous.
@@ -78,6 +82,7 @@ class AgentPendingTransactionsView(LoginRequiredMixin, ListView):
         ).select_related('batch__bank_account')
 
 
+@method_decorator(never_cache, name='dispatch')
 class TransactionMatchView(LoginRequiredMixin, CreateView):
     """
     View for agents to manually match a transaction to one of their assigned supporters.

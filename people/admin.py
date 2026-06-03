@@ -42,14 +42,12 @@ class SupporterAdmin(admin.ModelAdmin):
         "last_name",
         "email",
         "phone_number",
-        "approval_status",
         "is_donor",
         "is_subscriber",
     )
-    list_filter = ("approval_status", "is_donor", "is_subscriber", "created_at")
+    list_filter = ("is_donor", "is_subscriber", "created_at")
     search_fields = ("first_name", "last_name", "email", "phone_number")
     readonly_fields = ("id", "created_at", "updated_at")
-    list_editable = ("approval_status",)  # Allows quick approval from the list view
 
     fieldsets = (
         (
@@ -71,7 +69,6 @@ class SupporterAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "assigned_agent",
-                    "approval_status",
                     "created_at",
                     "updated_at",
                 )

@@ -1,9 +1,12 @@
 from django.views.generic import ListView, DetailView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Sum
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
 from .models import Supporter
 from finance.models import BankTransaction, TransactionAuditLog, StatementImportBatch
 
+@method_decorator(never_cache, name='dispatch')
 class AgentDashboardView(LoginRequiredMixin, ListView):
     """
     Dashboard showing the agent's assigned supporters and task metrics.
@@ -34,6 +37,7 @@ class AgentDashboardView(LoginRequiredMixin, ListView):
         return context
 
 
+@method_decorator(never_cache, name='dispatch')
 class SupporterDetailView(LoginRequiredMixin, DetailView):
     """
     Detailed view for a specific assigned supporter.
@@ -48,11 +52,12 @@ class SupporterDetailView(LoginRequiredMixin, DetailView):
         return Supporter.objects.filter(assigned_agent=self.request.user)
 
 
-class AdminRequiredMixin(UserPassesTestMixin):
+class AdminRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_active and (self.request.user.is_staff or self.request.user.is_superuser)
 
 
+@method_decorator(never_cache, name='dispatch')
 class AdminDashboardView(AdminRequiredMixin, TemplateView):
     """
     The Command Center for Admins.

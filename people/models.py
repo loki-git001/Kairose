@@ -6,11 +6,6 @@ import uuid
 
 
 class Supporter(models.Model):
-    class ApprovalStatus(models.TextChoices):
-        PROSPECT = "PROSPECT", _("Prospect / Canvassed")
-        APPROVED = "APPROVED", _("Approved")
-        REJECTED = "REJECTED", _("Rejected")
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150, blank=True, default="")
@@ -27,9 +22,6 @@ class Supporter(models.Model):
         null=True,
         blank=True,
         related_name="assigned_supporters",
-    )
-    approval_status = models.CharField(
-        max_length=20, choices=ApprovalStatus.choices, default=ApprovalStatus.PROSPECT
     )
 
     created_at = models.DateTimeField(auto_now_add=True)

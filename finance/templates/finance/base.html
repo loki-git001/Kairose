@@ -25,21 +25,24 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'people:admin_dashboard' %}">Admin Dashboard</a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'finance:upload_statement' %}">Upload Statement</a>
-                    </li>
                     {% else %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'people:agent_dashboard' %}">Agent Dashboard</a>
-                    </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'finance:pending_transactions' %}">Pending Transactions</a>
                     </li>
                     {% endif %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'people:agent_dashboard' %}">Agent Dashboard</a>
+                    </li>
                 </ul>
-                <div class="d-flex text-white">
-                    Logged in as: {{ request.user.username }}
+                {% if request.user.is_authenticated %}
+                <div class="d-flex align-items-center text-white">
+                    <span class="me-3">Logged in as: <strong>{{ request.user.username }}</strong></span>
+                    <form action="{% url 'logout' %}" method="post" class="d-inline" id="logout-form">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-light btn-sm" id="logout-btn">Logout</button>
+                    </form>
                 </div>
+                {% endif %}
             </div>
         </div>
     </nav>

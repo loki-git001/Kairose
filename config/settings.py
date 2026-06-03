@@ -70,6 +70,11 @@ TEMPLATES = [
 
 LOGIN_REDIRECT_URL = '/'
 LOGIN_URL = 'login'
+LOGOUT_REDIRECT_URL = 'login'
+
+# Session Configuration
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+SESSION_COOKIE_AGE = 1209600  # 2 weeks, in seconds
 
 WSGI_APPLICATION = "config.wsgi.application"
 
