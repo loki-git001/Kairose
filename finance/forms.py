@@ -13,14 +13,14 @@ class StatementUploadForm(forms.Form):
         widget=forms.Select(attrs={'class': 'form-select'})
     )
     file = forms.FileField(
-        label="Statement File (CSV)",
-        widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.csv'})
+        label="Statement File (Excel)",
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.xls, .xlsx'})
     )
 
     def clean_file(self):
         file = self.cleaned_data.get('file')
-        if file and not file.name.endswith('.csv'):
-            raise ValidationError("Security Error: Only strictly formatted .csv files are allowed.")
+        if file and not file.name.endswith(('.xls', '.xlsx')):
+            raise ValidationError("Security Error: Only strictly formatted .xls, .xlsx files are allowed.")
         return file
 
 

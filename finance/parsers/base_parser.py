@@ -4,7 +4,7 @@ class BaseStatementParser:
 
     def parse(self):
         """
-        Must read the CSV file and return a list of dictionaries.
+        Must read the Excel file and return a list of dictionaries.
         Each dictionary must match the fields of the BankTransaction model.
         """
         raise NotImplementedError("Subclasses must implement the parse() method.")

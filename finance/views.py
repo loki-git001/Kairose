@@ -60,7 +60,7 @@ class StatementUploadView(AdminRequiredMixin, FormView):
         else:
             messages.error(
                 self.request, 
-                f"Batch #{batch.id} failed to process. Please verify the CSV matches the {bank_account.get_parser_type_display()} format."
+                f"Batch #{batch.id} failed to process. Please verify the Excel sheet matches the {bank_account.get_parser_type_display()} format."
             )
 
         return super().form_valid(form)
