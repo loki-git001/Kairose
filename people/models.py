@@ -76,22 +76,3 @@ class CanvassInteraction(models.Model):
     class Meta:
         ordering = ["-interaction_date"]
 
-
-class MagazineSubscription(models.Model):
-    class Status(models.TextChoices):
-        ACTIVE = "ACTIVE", _("Active")
-        EXPIRED = "EXPIRED", _("Expired")
-        CANCELLED = "CANCELLED", _("Cancelled")
-
-    supporter = models.ForeignKey(
-        Supporter, on_delete=models.CASCADE, related_name="subscriptions"
-    )
-    start_date = models.DateField()
-    end_date = models.DateField()
-    status = models.CharField(
-        max_length=15, choices=Status.choices, default=Status.ACTIVE
-    )
-    delivery_address = models.TextField(blank=True)
-
-    class Meta:
-        indexes = [models.Index(fields=["status", "end_date"])]

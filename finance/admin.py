@@ -15,7 +15,7 @@ from .models import (
 class LedgerAllocationInline(admin.TabularInline):
     model = LedgerAllocation
     extra = 0
-    raw_id_fields = ("supporter", "related_subscription")
+    raw_id_fields = ("supporter",)
 
 
 class TransactionAuditLogInline(admin.TabularInline):
@@ -111,7 +111,7 @@ class LedgerAllocationAdmin(admin.ModelAdmin):
         "supporter__first_name",
         "supporter__last_name",
     )
-    raw_id_fields = ("transaction", "supporter", "related_subscription")
+    raw_id_fields = ("transaction", "supporter")
     readonly_fields = ("id", "created_at")
 
 

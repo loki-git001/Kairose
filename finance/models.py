@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 import uuid
 
 # Cross-app imports
-from people.models import Supporter, MagazineSubscription
+from people.models import Supporter
 
 
 class CharityBankAccount(models.Model):
@@ -69,16 +69,9 @@ class BankTransaction(models.Model):
         UNKNOWN = "UNKNOWN", _("Unknown")
 
     class MatchStatus(models.TextChoices):
-        UNMATCHED = "UNMATCHED", _("Unmatched (Action Required)")
-        AUTO_MATCHED = "AUTO_MATCHED", _("Auto-Matched")
-        MANUAL_MATCHED = "MANUAL_MATCHED", _("Manually Matched")
-        AMBIGUOUS = "AMBIGUOUS", _("Ambiguous")
+        UNMATCHED = "UNMATCHED", _("Unmatched")
+        MATCHED = "MATCHED", _("Matched")
         IGNORED = "IGNORED", _("Ignored")
-
-    class TransactionPurpose(models.TextChoices):
-        DONATION = "DONATION", _("Charity donation")
-        SUBSCRIPTION = "SUBSCRIPTION", _("Magazine subscription")
-        OTHER = "OTHER", _("Other")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     batch = models.ForeignKey(
@@ -106,10 +99,6 @@ class BankTransaction(models.Model):
         blank=True,
         related_name="bank_transactions",
     )
-    
-    purpose = models.CharField(
-        max_length=20, choices=TransactionPurpose.choices, null=True, blank=True
-    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -131,11 +120,6 @@ class BankTransaction(models.Model):
 
 
 class LedgerAllocation(models.Model):
-    class Purpose(models.TextChoices):
-        DONATION = "DONATION", _("Charity Donation")
-        SUBSCRIPTION = "SUBSCRIPTION", _("Magazine Subscription")
-        OTHER = "OTHER", _("Other")
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     transaction = models.ForeignKey(
         BankTransaction, on_delete=models.CASCADE, related_name="allocations"
@@ -144,23 +128,15 @@ class LedgerAllocation(models.Model):
         Supporter, on_delete=models.PROTECT, related_name="allocations"
     )
 
-    purpose = models.CharField(max_length=15, choices=Purpose.choices)
+    purpose = models.CharField(max_length=50)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
-    related_subscription = models.ForeignKey(
-        MagazineSubscription,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="payments",
-    )
     created_at = models.DateTimeField(auto_now_add=True)
 
 
 class TransactionAuditLog(models.Model):
     class Action(models.TextChoices):
         IMPORTED = "IMPORTED", _("Statement Imported")
-        AUTO_MATCHED = "AUTO_MATCHED", _("System Auto-Matched")
-        MANUAL_MATCHED = "MANUAL_MATCHED", _("Agent Manually Matched")
+        MATCHED = "MATCHED", _("Transaction Matched")
         UNMATCHED = "UNMATCHED", _("Agent Unmatched")
         ALLOCATION_CHANGED = "ALLOC_CHANGED", _("Allocation Changed")
 

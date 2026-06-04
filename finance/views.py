@@ -7,9 +7,9 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
 from django.views.generic import CreateView, FormView, ListView, DeleteView
 from django.views import View
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseRedirect
 import json
-from people.models import Supporter
+from people.models import Supporter, SupporterIdentifier
 
 from .forms import StatementUploadForm, TransactionMatchForm
 from .models import (
@@ -84,19 +84,26 @@ class BatchDeleteView(AdminRequiredMixin, DeleteView):
 
 
 @method_decorator(never_cache, name='dispatch')
-class AgentPendingTransactionsView(LoginRequiredMixin, ListView):
+class AgentTransactionsView(LoginRequiredMixin, ListView):
     """
-    Agents view all system-wide transactions that are unmatched or ambiguous.
+    Agents view all system-wide transactions with a status filter.
     """
     model = BankTransaction
-    template_name = 'finance/pending_transactions.html'
+    template_name = 'finance/transactions.html'
     context_object_name = 'transactions'
 
     def get_queryset(self):
-        # Global Ledger Visibility: Agents can see all unmatched transactions system-wide
-        return BankTransaction.objects.filter(
-            match_status__in=[BankTransaction.MatchStatus.UNMATCHED, BankTransaction.MatchStatus.AMBIGUOUS]
-        ).select_related('batch__bank_account')
+        qs = BankTransaction.objects.select_related('batch__bank_account')
+        statuses = self.request.GET.getlist('status')
+        if statuses:
+            qs = qs.filter(match_status__in=statuses)
+        return qs
+        
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['status_choices'] = BankTransaction.MatchStatus.choices
+        context['selected_statuses'] = self.request.GET.getlist('status')
+        return context
 
 
 @method_decorator(never_cache, name='dispatch')
@@ -107,17 +114,160 @@ class TransactionMatchView(LoginRequiredMixin, CreateView):
     model = LedgerAllocation
     form_class = TransactionMatchForm
     template_name = 'finance/transaction_match.html'
-    success_url = reverse_lazy('finance:pending_transactions')
+    success_url = reverse_lazy('finance:transactions')
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
+        kwargs['transaction'] = get_object_or_404(BankTransaction, pk=self.kwargs['transaction_id'])
         return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['transaction'] = get_object_or_404(BankTransaction, pk=self.kwargs['transaction_id'])
+        txn = get_object_or_404(BankTransaction, pk=self.kwargs['transaction_id'])
+        context['transaction'] = txn
+        
+        is_new = False
+        suggested_supporter_id = None
+        
+        if txn.extracted_identifier:
+            is_new = not SupporterIdentifier.objects.filter(value=txn.extracted_identifier).exists()
+            if not is_new:
+                # Find the existing supporter
+                sid = SupporterIdentifier.objects.filter(value=txn.extracted_identifier).first()
+                if sid:
+                    suggested_supporter_id = sid.supporter_id
+        context['is_new_identifier'] = is_new
+
+        from .services import extract_phone_from_upi
+        if txn.transaction_mode == BankTransaction.TransactionMode.UPI:
+            text_to_search = f"{txn.extracted_identifier} {txn.raw_narration}"
+            expected_phone = extract_phone_from_upi(text_to_search)
+            if expected_phone:
+                context['expected_phone'] = expected_phone
+                if not suggested_supporter_id:
+                    sid = SupporterIdentifier.objects.filter(identifier_type=SupporterIdentifier.IdentifierType.PHONE_NUMBER, value=expected_phone).first()
+                    if sid:
+                        suggested_supporter_id = sid.supporter_id
+                        
+        context['suggested_supporter_id'] = suggested_supporter_id
+        
+        # Get distinct purposes for the dropdown
+        existing_purposes = list(LedgerAllocation.objects.values_list('purpose', flat=True).distinct())
+        default_purposes = ["Charity Donation", "Magazine Subscription", "Other"]
+        all_purposes = list(set(existing_purposes + default_purposes))
+        context['purposes'] = sorted(all_purposes)
+
+        # Get existing splits if any (for edit mode)
+        context['existing_splits'] = txn.allocations.all()
+
         return context
+
+    def get_initial(self):
+        return super().get_initial()
+
+    def form_valid(self, form):
+        from decimal import Decimal
+        txn = get_object_or_404(BankTransaction, pk=self.kwargs['transaction_id'])
+        
+        purposes = self.request.POST.getlist('purpose[]')
+        amounts = self.request.POST.getlist('amount[]')
+        
+        if not purposes or not amounts or len(purposes) != len(amounts):
+            messages.error(self.request, "Invalid splits submitted.")
+            return self.form_invalid(form)
+            
+        try:
+            decimal_amounts = [Decimal(a) for a in amounts]
+            total_split = sum(decimal_amounts)
+        except:
+            messages.error(self.request, "Invalid amount values.")
+            return self.form_invalid(form)
+            
+        if total_split != txn.amount:
+            messages.error(self.request, f"Split amounts must exactly equal {txn.amount}")
+            return self.form_invalid(form)
+        
+        with transaction.atomic():
+            supporter = form.cleaned_data['supporter']
+            
+            # 1. Delete existing allocations (clean slate for editing)
+            LedgerAllocation.objects.filter(transaction=txn).delete()
+            
+            # 2. Create the LedgerAllocations
+            allocations_to_create = []
+            has_donation = False
+            has_subscription = False
+            
+            for p, a in zip(purposes, decimal_amounts):
+                p = p.strip()
+                if not p or a <= 0:
+                    continue
+                    
+                allocations_to_create.append(
+                    LedgerAllocation(
+                        transaction=txn,
+                        supporter=supporter,
+                        purpose=p,
+                        amount=a
+                    )
+                )
+                if 'donation' in p.lower():
+                    has_donation = True
+                if 'subscription' in p.lower():
+                    has_subscription = True
+                    
+            if not allocations_to_create:
+                messages.error(self.request, "No valid splits were provided.")
+                return self.form_invalid(form)
+                
+            LedgerAllocation.objects.bulk_create(allocations_to_create)
+
+            # 3. Update BankTransaction
+            txn.match_status = BankTransaction.MatchStatus.MATCHED
+            txn.matched_supporter = supporter
+            txn.save()
+
+            # 4. Update Supporter Donor/Subscriber Status
+            if has_donation:
+                supporter.is_donor = True
+            if has_subscription:
+                supporter.is_subscriber = True
+            if has_donation or has_subscription:
+                supporter.save()
+
+            # 5. Write TransactionAuditLog
+            TransactionAuditLog.objects.create(
+                transaction=txn,
+                actor=self.request.user,
+                action=TransactionAuditLog.Action.MATCHED,
+                notes=f"Matched to {supporter} with {len(purposes)} split(s)."
+            )
+            
+            link_upi_id = self.request.POST.get('link_upi_id')
+            if link_upi_id and link_upi_id.strip():
+                val = link_upi_id.strip()
+                if not SupporterIdentifier.objects.filter(value=val).exists():
+                    SupporterIdentifier.objects.create(
+                        supporter=supporter,
+                        identifier_type=SupporterIdentifier.IdentifierType.UPI_ID,
+                        value=val,
+                        is_verified=True
+                    )
+            link_phone_number = self.request.POST.get('link_phone_number')
+            if link_phone_number and link_phone_number.strip():
+                phone_val = link_phone_number.strip()
+                if not SupporterIdentifier.objects.filter(identifier_type=SupporterIdentifier.IdentifierType.PHONE_NUMBER, value=phone_val).exists():
+                    SupporterIdentifier.objects.create(
+                        supporter=supporter,
+                        identifier_type=SupporterIdentifier.IdentifierType.PHONE_NUMBER,
+                        value=phone_val,
+                        is_verified=True
+                    )
+            
+            messages.success(self.request, f"Transaction {txn.bank_reference} matched successfully.")
+        self.object = allocations_to_create[0] if allocations_to_create else None
+        return HttpResponseRedirect(self.get_success_url())
 
 
 class CreateSupporterAjaxView(LoginRequiredMixin, View):
@@ -142,6 +292,22 @@ class CreateSupporterAjaxView(LoginRequiredMixin, View):
                 assigned_agent=request.user
             )
             
+            if phone_number and not SupporterIdentifier.objects.filter(identifier_type=SupporterIdentifier.IdentifierType.PHONE_NUMBER, value=phone_number).exists():
+                SupporterIdentifier.objects.create(
+                    supporter=supporter,
+                    identifier_type=SupporterIdentifier.IdentifierType.PHONE_NUMBER,
+                    value=phone_number,
+                    is_verified=True
+                )
+                
+            if email and not SupporterIdentifier.objects.filter(value=email).exists():
+                SupporterIdentifier.objects.create(
+                    supporter=supporter,
+                    identifier_type=SupporterIdentifier.IdentifierType.EMAIL,
+                    value=email,
+                    is_verified=True
+                )
+            
             return JsonResponse({
                 'success': True, 
                 'supporter_id': str(supporter.id),
@@ -155,6 +321,12 @@ class SupporterDetailsAjaxView(LoginRequiredMixin, View):
     def get(self, request, supporter_id, *args, **kwargs):
         try:
             supporter = Supporter.objects.get(id=supporter_id)
+            phone_identifiers = list(
+                SupporterIdentifier.objects.filter(
+                    supporter=supporter, 
+                    identifier_type=SupporterIdentifier.IdentifierType.PHONE_NUMBER
+                ).values_list('value', flat=True)
+            )
             data = {
                 'first_name': supporter.first_name,
                 'last_name': supporter.last_name,
@@ -162,57 +334,25 @@ class SupporterDetailsAjaxView(LoginRequiredMixin, View):
                 'phone_number': supporter.phone_number or '',
                 'address': supporter.address or '',
                 'is_donor': supporter.is_donor,
-                'is_subscriber': supporter.is_subscriber
+                'is_subscriber': supporter.is_subscriber,
+                'phone_identifiers': phone_identifiers
             }
             return JsonResponse({'success': True, 'data': data})
         except Supporter.DoesNotExist:
             return JsonResponse({'success': False, 'error': 'Supporter not found'})
 
-    def get_initial(self):
-        initial = super().get_initial()
-        # Default the amount to the transaction amount
-        txn = get_object_or_404(BankTransaction, pk=self.kwargs['transaction_id'])
-        initial['amount'] = txn.amount
-        return initial
 
-    def form_valid(self, form):
-        txn = get_object_or_404(BankTransaction, pk=self.kwargs['transaction_id'])
-        
-        with transaction.atomic():
-            # 1. Create the LedgerAllocation
-            allocation = form.save(commit=False)
-            allocation.transaction = txn
-            allocation.save()
-
-            # 2. Update BankTransaction
-            txn.match_status = BankTransaction.MatchStatus.MANUAL_MATCHED
-            txn.matched_supporter = allocation.supporter
-            txn.purpose = allocation.purpose
-            txn.save()
-
-            # 3. Update Supporter Donor/Subscriber Status
-            supporter = allocation.supporter
-            donation_count = BankTransaction.objects.filter(
-                matched_supporter=supporter, purpose=BankTransaction.TransactionPurpose.DONATION
-            ).count()
-            subscription_count = BankTransaction.objects.filter(
-                matched_supporter=supporter, purpose=BankTransaction.TransactionPurpose.SUBSCRIPTION
-            ).count()
-
-            if donation_count >= 1:
-                supporter.is_donor = True
-            if subscription_count >= 1:
-                supporter.is_subscriber = True
-            supporter.save()
-
-            # 4. Write TransactionAuditLog
-            TransactionAuditLog.objects.create(
-                transaction=txn,
-                actor=self.request.user,
-                action=TransactionAuditLog.Action.MANUAL_MATCHED,
-                notes=f"Manually matched to {allocation.supporter}"
-            )
+class CheckPhoneExistsAjaxView(LoginRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        phone_number = request.GET.get('phone_number', '').strip()
+        if not phone_number:
+            return JsonResponse({'exists': False})
             
-            messages.success(self.request, f"Transaction {txn.bank_reference} matched successfully.")
-
-        return super().form_valid(form)
+        ident = SupporterIdentifier.objects.filter(
+            identifier_type=SupporterIdentifier.IdentifierType.PHONE_NUMBER, 
+            value=phone_number
+        ).select_related('supporter').first()
+        
+        if ident:
+            return JsonResponse({'exists': True, 'supporter_name': str(ident.supporter)})
+        return JsonResponse({'exists': False})

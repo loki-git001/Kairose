@@ -3,7 +3,6 @@ from .models import (
     Supporter,
     SupporterIdentifier,
     CanvassInteraction,
-    MagazineSubscription,
 )
 
 # ==========================================
@@ -15,12 +14,6 @@ class SupporterIdentifierInline(admin.TabularInline):
     model = SupporterIdentifier
     extra = 1
     fields = ("identifier_type", "value", "is_verified")
-
-
-class MagazineSubscriptionInline(admin.TabularInline):
-    model = MagazineSubscription
-    extra = 0
-    fields = ("start_date", "end_date", "status", "delivery_address")
 
 
 class CanvassInteractionInline(admin.TabularInline):
@@ -77,7 +70,6 @@ class SupporterAdmin(admin.ModelAdmin):
     )
     inlines = [
         SupporterIdentifierInline,
-        MagazineSubscriptionInline,
         CanvassInteractionInline,
     ]
 

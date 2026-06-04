@@ -38,35 +38,10 @@ class TransactionMatchForm(forms.ModelForm):
 
     class Meta:
         model = LedgerAllocation
-        fields = ['supporter', 'purpose', 'amount']
-        widgets = {
-            'purpose': forms.Select(attrs={'class': 'form-select'}),
-            'amount': forms.NumberInput(attrs={'class': 'form-control'}),
-        }
+        fields = ['supporter']
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
-        # Pass the specific bank transaction into the form
         self.transaction = kwargs.pop('transaction', None) 
-        
         super().__init__(*args, **kwargs)
-        
-        if self.user:
-            self.fields['supporter'].queryset = Supporter.objects.filter(assigned_agent=self.user)
-            
-        # Default the amount field to the exact amount of the bank transaction
-        if self.transaction and not self.is_bound:
-            self.fields['amount'].initial = self.transaction.amount
-
-    def clean(self):
-        cleaned_data = super().clean()
-        amount = cleaned_data.get('amount')
-
-        # 2. Financial Integrity Logic
-        if self.transaction and amount:
-            if amount > self.transaction.amount:
-                raise ValidationError(f"You cannot allocate more than the transaction total (₹{self.transaction.amount}).")
-            if amount <= 0:
-                raise ValidationError("Allocation amount must be greater than zero.")
-                
-        return cleaned_data
+        self.fields['supporter'].queryset = Supporter.objects.all()

@@ -23,15 +23,15 @@ class AgentDashboardView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # To-Do Pipeline: Count of unmatched or ambiguous transactions
+        # To-Do Pipeline: Count of unmatched transactions
         context['unmatched_count'] = BankTransaction.objects.filter(
-            match_status__in=[BankTransaction.MatchStatus.UNMATCHED, BankTransaction.MatchStatus.AMBIGUOUS]
+            match_status__in=[BankTransaction.MatchStatus.UNMATCHED]
         ).count()
         
         # Recent Successes: Feed of the agent's recently matched transactions
         context['recent_successes'] = TransactionAuditLog.objects.filter(
             actor=self.request.user,
-            action=TransactionAuditLog.Action.MANUAL_MATCHED
+            action=TransactionAuditLog.Action.MATCHED
         ).select_related('transaction').order_by('-timestamp')[:5]
         
         return context
