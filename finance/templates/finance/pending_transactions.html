@@ -13,6 +13,7 @@
                         <th>Date</th>
                         <th>Bank Ref</th>
                         <th>Amount</th>
+                        <th>Type</th>
                         <th>Extracted Name</th>
                         <th>Narration</th>
                         <th>Status</th>
@@ -25,6 +26,7 @@
                         <td>{{ txn.transaction_date|date:"Y-m-d" }}</td>
                         <td>{{ txn.bank_reference }}</td>
                         <td>{{ txn.amount }}</td>
+                        <td><span class="badge bg-secondary">{{ txn.get_transaction_mode_display }}</span></td>
                         <td>{{ txn.extracted_name|default:"-" }}</td>
                         <td><small>{{ txn.raw_narration|truncatechars:50 }}</small></td>
                         <td>
@@ -38,7 +40,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center text-muted">No pending transactions found.</td>
+                        <td colspan="8" class="text-center text-muted">No pending transactions found.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

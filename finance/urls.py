@@ -5,6 +5,9 @@ app_name = 'finance'
 
 urlpatterns = [
     path('upload/', views.StatementUploadView.as_view(), name='upload_statement'),
+    path('batch/<int:pk>/delete/', views.BatchDeleteView.as_view(), name='delete_batch'),
     path('pending/', views.AgentPendingTransactionsView.as_view(), name='pending_transactions'),
     path('match/<uuid:transaction_id>/', views.TransactionMatchView.as_view(), name='transaction_match'),
+    path('api/supporter/create/', views.CreateSupporterAjaxView.as_view(), name='api_create_supporter'),
+    path('api/supporter/<uuid:supporter_id>/details/', views.SupporterDetailsAjaxView.as_view(), name='api_supporter_details'),
 ]

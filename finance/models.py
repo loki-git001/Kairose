@@ -75,6 +75,11 @@ class BankTransaction(models.Model):
         AMBIGUOUS = "AMBIGUOUS", _("Ambiguous")
         IGNORED = "IGNORED", _("Ignored")
 
+    class TransactionPurpose(models.TextChoices):
+        DONATION = "DONATION", _("Charity donation")
+        SUBSCRIPTION = "SUBSCRIPTION", _("Magazine subscription")
+        OTHER = "OTHER", _("Other")
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     batch = models.ForeignKey(
         StatementImportBatch, on_delete=models.CASCADE, related_name="transactions"
@@ -100,6 +105,10 @@ class BankTransaction(models.Model):
         null=True,
         blank=True,
         related_name="bank_transactions",
+    )
+    
+    purpose = models.CharField(
+        max_length=20, choices=TransactionPurpose.choices, null=True, blank=True
     )
 
     created_at = models.DateTimeField(auto_now_add=True)

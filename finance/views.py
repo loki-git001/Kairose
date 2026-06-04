@@ -5,7 +5,11 @@ from django.shortcuts import get_object_or_404
 from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
-from django.views.generic import CreateView, FormView, ListView
+from django.views.generic import CreateView, FormView, ListView, DeleteView
+from django.views import View
+from django.http import JsonResponse
+import json
+from people.models import Supporter
 
 from .forms import StatementUploadForm, TransactionMatchForm
 from .models import (
@@ -67,6 +71,19 @@ class StatementUploadView(AdminRequiredMixin, FormView):
 
 
 @method_decorator(never_cache, name='dispatch')
+class BatchDeleteView(AdminRequiredMixin, DeleteView):
+    """
+    Admin-only view to delete a statement import batch and its transactions.
+    """
+    model = StatementImportBatch
+    success_url = reverse_lazy('people:admin_dashboard')
+
+    def form_valid(self, form):
+        messages.success(self.request, f"Batch #{self.object.id} and all its transactions have been successfully deleted.")
+        return super().form_valid(form)
+
+
+@method_decorator(never_cache, name='dispatch')
 class AgentPendingTransactionsView(LoginRequiredMixin, ListView):
     """
     Agents view all system-wide transactions that are unmatched or ambiguous.
@@ -102,6 +119,55 @@ class TransactionMatchView(LoginRequiredMixin, CreateView):
         context['transaction'] = get_object_or_404(BankTransaction, pk=self.kwargs['transaction_id'])
         return context
 
+
+class CreateSupporterAjaxView(LoginRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        try:
+            data = json.loads(request.body)
+            first_name = data.get('first_name', '').strip()
+            last_name = data.get('last_name', '').strip()
+            email = data.get('email', '').strip()
+            phone_number = data.get('phone_number', '').strip()
+            address = data.get('address', '').strip()
+            
+            if not first_name:
+                return JsonResponse({'success': False, 'error': 'First name is required'})
+            
+            supporter = Supporter.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email if email else None,
+                phone_number=phone_number if phone_number else None,
+                address=address,
+                assigned_agent=request.user
+            )
+            
+            return JsonResponse({
+                'success': True, 
+                'supporter_id': str(supporter.id),
+                'name': str(supporter)
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+
+class SupporterDetailsAjaxView(LoginRequiredMixin, View):
+    def get(self, request, supporter_id, *args, **kwargs):
+        try:
+            supporter = Supporter.objects.get(id=supporter_id)
+            data = {
+                'first_name': supporter.first_name,
+                'last_name': supporter.last_name,
+                'email': supporter.email or '',
+                'phone_number': supporter.phone_number or '',
+                'address': supporter.address or '',
+                'is_donor': supporter.is_donor,
+                'is_subscriber': supporter.is_subscriber
+            }
+            return JsonResponse({'success': True, 'data': data})
+        except Supporter.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Supporter not found'})
+
     def get_initial(self):
         initial = super().get_initial()
         # Default the amount to the transaction amount
@@ -121,9 +187,25 @@ class TransactionMatchView(LoginRequiredMixin, CreateView):
             # 2. Update BankTransaction
             txn.match_status = BankTransaction.MatchStatus.MANUAL_MATCHED
             txn.matched_supporter = allocation.supporter
+            txn.purpose = allocation.purpose
             txn.save()
 
-            # 3. Write TransactionAuditLog
+            # 3. Update Supporter Donor/Subscriber Status
+            supporter = allocation.supporter
+            donation_count = BankTransaction.objects.filter(
+                matched_supporter=supporter, purpose=BankTransaction.TransactionPurpose.DONATION
+            ).count()
+            subscription_count = BankTransaction.objects.filter(
+                matched_supporter=supporter, purpose=BankTransaction.TransactionPurpose.SUBSCRIPTION
+            ).count()
+
+            if donation_count >= 1:
+                supporter.is_donor = True
+            if subscription_count >= 1:
+                supporter.is_subscriber = True
+            supporter.save()
+
+            # 4. Write TransactionAuditLog
             TransactionAuditLog.objects.create(
                 transaction=txn,
                 actor=self.request.user,

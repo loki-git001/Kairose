@@ -27,31 +27,13 @@ class StatementUploadForm(forms.Form):
 class TransactionMatchForm(forms.ModelForm):
     """
     Form for manually matching a transaction.
-    Agents can select a supporter assigned to them OR create a new supporter.
+    Agents can select a supporter assigned to them OR create a new supporter via popup.
     """
     supporter = forms.ModelChoiceField(
         queryset=Supporter.objects.none(),
         widget=forms.Select(attrs={'class': 'form-select'}),
-        required=False,
+        required=True,
         label="Select Existing Supporter"
-    )
-    
-    new_first_name = forms.CharField(
-        max_length=150, 
-        required=False, 
-        widget=forms.TextInput(attrs={'class': 'form-control'}),
-        label="First Name"
-    )
-    new_last_name = forms.CharField(
-        max_length=150, 
-        required=False, 
-        widget=forms.TextInput(attrs={'class': 'form-control'}),
-        label="Last Name"
-    )
-    new_email = forms.EmailField(
-        required=False, 
-        widget=forms.EmailInput(attrs={'class': 'form-control'}),
-        label="Email Address"
     )
 
     class Meta:
@@ -78,16 +60,8 @@ class TransactionMatchForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        supporter = cleaned_data.get('supporter')
-        new_first_name = cleaned_data.get('new_first_name')
         amount = cleaned_data.get('amount')
 
-        # 1. XOR Supporter Logic
-        if supporter and new_first_name:
-            raise ValidationError("Please either select an existing supporter OR enter a new one, not both.")
-        if not supporter and not new_first_name:
-            raise ValidationError("You must either select an existing supporter or provide at least a First Name to create a new one.")
-            
         # 2. Financial Integrity Logic
         if self.transaction and amount:
             if amount > self.transaction.amount:
