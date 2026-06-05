@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404
 from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
-from django.views.generic import CreateView, FormView, ListView, DeleteView
+from django.views.generic import CreateView, FormView, ListView, DeleteView, DetailView
 from django.views import View
 from django.http import JsonResponse, HttpResponseRedirect
 import json
@@ -18,7 +18,8 @@ from .models import (
     StatementImportBatch,
     TransactionAuditLog,
 )
-from .services import process_statement_batch
+from django.db.models import Count, Q
+from .services import process_statement_batch, DuplicateStatementError
 
 
 class AdminRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -49,22 +50,24 @@ class StatementUploadView(AdminRequiredMixin, FormView):
         )
         
         # 2. TRIGGER THE SERVICE LAYER
-        # This will parse, ingest, auto-match, and update the batch status.
-        process_statement_batch(batch.id)
-        
-        # 3. Smart Feedback
-        # Refresh the batch from the database to see what the service did to it
-        batch.refresh_from_db()
-        
-        if batch.status == StatementImportBatch.Status.PROCESSED:
-            messages.success(
-                self.request, 
-                f"Success! Batch #{batch.id} processed. {batch.total_rows} transactions imported and auto-matched where possible."
-            )
-        else:
+        try:
+            result = process_statement_batch(batch.id)
+            batch.refresh_from_db()
+            
+            msg = f"Success! Batch #{batch.batch_number} processed. {result['inserted_count']} transactions imported."
+            if result['skipped_count'] > 0:
+                msg += f" ({result['skipped_count']} duplicate rows were safely skipped)."
+            messages.success(self.request, msg)
+            
+        except DuplicateStatementError:
             messages.error(
                 self.request, 
-                f"Batch #{batch.id} failed to process. Please verify the Excel sheet matches the {bank_account.get_parser_type_display()} format."
+                "Failed to process: Cannot upload duplicate statement. All transactions already exist."
+            )
+        except Exception as e:
+            messages.error(
+                self.request, 
+                f"Failed to process. Please verify the Excel sheet matches the {bank_account.get_parser_type_display()} format."
             )
 
         return super().form_valid(form)
@@ -77,10 +80,37 @@ class BatchDeleteView(AdminRequiredMixin, DeleteView):
     """
     model = StatementImportBatch
     success_url = reverse_lazy('people:admin_dashboard')
+    slug_field = 'batch_number'
+    slug_url_kwarg = 'batch_number'
 
     def form_valid(self, form):
         messages.success(self.request, f"Batch #{self.object.id} and all its transactions have been successfully deleted.")
         return super().form_valid(form)
+
+
+@method_decorator(never_cache, name='dispatch')
+class BatchDetailView(AdminRequiredMixin, DetailView):
+    """
+    Admin-only view to see details of a specific statement import batch, 
+    including the original file via an in-browser spreadsheet viewer.
+    """
+    model = StatementImportBatch
+    template_name = 'finance/batch_detail.html'
+    context_object_name = 'batch'
+    slug_field = 'batch_number'
+    slug_url_kwarg = 'batch_number'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        counts = self.object.transactions.aggregate(
+            matched_count=Count('id', filter=Q(match_status=BankTransaction.MatchStatus.MATCHED)),
+            unmatched_count=Count('id', filter=Q(match_status=BankTransaction.MatchStatus.UNMATCHED)),
+            ignored_count=Count('id', filter=Q(match_status=BankTransaction.MatchStatus.IGNORED))
+        )
+        context.update(counts)
+        return context
+
 
 
 @method_decorator(never_cache, name='dispatch')

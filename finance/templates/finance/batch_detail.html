@@ -1,0 +1,154 @@
+{% extends "finance/base.html" %}
+
+{% block content %}
+<div class="row mt-4">
+    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
+        <h2>Batch Details <span class="badge bg-secondary">#{{ batch.batch_number }}</span></h2>
+        <a href="{% url 'people:admin_dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Batch Metadata -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow-sm border-secondary">
+            <div class="card-header bg-secondary text-white fw-bold">
+                Batch Information
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Upload Date</dt>
+                    <dd class="col-sm-8">{{ batch.uploaded_at|date:"Y-m-d H:i" }}</dd>
+                    
+                    <dt class="col-sm-4">Uploaded By</dt>
+                    <dd class="col-sm-8">{{ batch.uploaded_by.username|default:"Unknown" }}</dd>
+                    
+                    <dt class="col-sm-4">Bank Account</dt>
+                    <dd class="col-sm-8">{{ batch.bank_account.name }}</dd>
+                    
+                    <dt class="col-sm-4">Status</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge {% if batch.status == 'PROCESSED' %}bg-success{% elif batch.status == 'FAILED' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                            {{ batch.get_status_display }}
+                        </span>
+                    </dd>
+                    
+                    <dt class="col-sm-4">Total Rows</dt>
+                    <dd class="col-sm-8">{{ batch.total_rows }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Transaction Summary -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow-sm border-info">
+            <div class="card-header bg-info text-dark fw-bold">
+                Transaction Breakdown
+            </div>
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="row text-center">
+                    <div class="col-4 border-end">
+                        <h2 class="text-success mb-0">{{ matched_count }}</h2>
+                        <small class="text-muted text-uppercase fw-bold">Matched</small>
+                    </div>
+                    <div class="col-4 border-end">
+                        <h2 class="text-danger mb-0">{{ unmatched_count }}</h2>
+                        <small class="text-muted text-uppercase fw-bold">Unmatched</small>
+                    </div>
+                    <div class="col-4">
+                        <h2 class="text-secondary mb-0">{{ ignored_count }}</h2>
+                        <small class="text-muted text-uppercase fw-bold">Ignored</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm border-dark">
+            <div class="card-header bg-dark text-white fw-bold d-flex justify-content-between align-items-center">
+                <span>Spreadsheet Viewer ({{ batch.file_reference.name|slice:"16:" }})</span>
+                <a href="{{ batch.file_reference.url }}" class="btn btn-sm btn-outline-light" download>
+                    <i class="bi bi-download"></i> Download Original
+                </a>
+            </div>
+            <div class="card-body p-0">
+                <div id="spreadsheet-container" class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                    <div class="text-center py-5 text-muted" id="spreadsheet-loading">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">Loading spreadsheet...</p>
+                    </div>
+                    <div id="spreadsheet-html" class="w-100"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load SheetJS -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const fileUrl = '{{ batch.file_reference.url }}';
+    const container = document.getElementById('spreadsheet-html');
+    const loading = document.getElementById('spreadsheet-loading');
+
+    // Fetch the file and process it with SheetJS
+    fetch(fileUrl)
+        .then(res => {
+            if (!res.ok) throw new Error("Network response was not ok");
+            return res.arrayBuffer();
+        })
+        .then(ab => {
+            // Read workbook
+            const workbook = XLSX.read(ab, { type: "array" });
+            
+            // Get first sheet
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // Convert to HTML
+            const htmlStr = XLSX.utils.sheet_to_html(worksheet, { id: "spreadsheet-table", editable: false });
+            
+            // Render
+            loading.style.display = 'none';
+            container.innerHTML = htmlStr;
+            
+            // Apply Bootstrap table classes to the generated table
+            const table = document.getElementById('spreadsheet-table');
+            if (table) {
+                table.classList.add('table', 'table-bordered', 'table-sm', 'mb-0');
+                table.style.fontSize = "0.85rem";
+                
+                // Make the header sticky if a header row exists
+                const thead = table.querySelector('thead');
+                if (thead) {
+                    thead.classList.add('table-light');
+                } else {
+                    // SheetJS sometimes generates just trs. Let's make the first row styled as header.
+                    const firstRow = table.querySelector('tr');
+                    if (firstRow) {
+                        firstRow.classList.add('table-light', 'fw-bold');
+                        // Make cells in first row sticky
+                        Array.from(firstRow.children).forEach(cell => {
+                            cell.style.position = 'sticky';
+                            cell.style.top = '0';
+                            cell.style.backgroundColor = '#f8f9fa';
+                            cell.style.zIndex = '1';
+                        });
+                    }
+                }
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            loading.innerHTML = `<i class="bi bi-exclamation-triangle text-danger fs-1"></i><p class="mt-2 text-danger">Failed to load spreadsheet.<br><small>${err.message}</small></p>`;
+        });
+});
+</script>
+{% endblock %}

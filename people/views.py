@@ -1,9 +1,14 @@
-from django.views.generic import ListView, DetailView, TemplateView
+from django.views.generic import ListView, DetailView, TemplateView, UpdateView
+from django.urls import reverse_lazy
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Sum
+from django.db.models import Sum, Min, Max
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
-from .models import Supporter
+from django.views import View
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+import json
+from .models import Supporter, CanvassInteraction
 from finance.models import BankTransaction, TransactionAuditLog, StatementImportBatch
 
 @method_decorator(never_cache, name='dispatch')
@@ -47,9 +52,88 @@ class SupporterDetailView(LoginRequiredMixin, DetailView):
     context_object_name = 'supporter'
     pk_url_kwarg = 'supporter_id'
 
-    def get_queryset(self):
-        # Additional safety check to only allow agents to view their own supporters.
-        return Supporter.objects.filter(assigned_agent=self.request.user)
+from django.shortcuts import redirect
+from django.contrib import messages
+from .models import SupporterIdentifier
+
+@method_decorator(never_cache, name='dispatch')
+class SupporterEditAPIView(LoginRequiredMixin, View):
+    """
+    Handles form submission from the Supporter Edit Modal.
+    """
+    def post(self, request, supporter_id):
+        supporter = get_object_or_404(Supporter, id=supporter_id)
+        if not (request.user.is_staff or request.user.is_superuser or supporter.assigned_agent == request.user):
+            messages.error(request, "Permission denied.")
+            return redirect('people:supporter_detail', supporter_id=supporter.id)
+
+        supporter.first_name = request.POST.get('first_name', supporter.first_name)
+        supporter.last_name = request.POST.get('last_name', supporter.last_name)
+        supporter.email = request.POST.get('email', '')
+        supporter.phone_number = request.POST.get('phone_number', '')
+        supporter.address = request.POST.get('address', '')
+        
+        try:
+            supporter.save()
+            messages.success(request, "Profile updated successfully.")
+        except Exception as e:
+            messages.error(request, f"Error updating profile: {str(e)}")
+            
+        return redirect('people:supporter_detail', supporter_id=supporter.id)
+
+@method_decorator(never_cache, name='dispatch')
+class IdentifierDeleteAPIView(LoginRequiredMixin, View):
+    """
+    Handles deletion of a SupporterIdentifier.
+    """
+    def post(self, request, identifier_id):
+        identifier = get_object_or_404(SupporterIdentifier, id=identifier_id)
+        supporter = identifier.supporter
+        
+        if not (request.user.is_staff or request.user.is_superuser or supporter.assigned_agent == request.user):
+            messages.error(request, "Permission denied.")
+            return redirect('people:supporter_detail', supporter_id=supporter.id)
+
+        try:
+            identifier.delete()
+            messages.success(request, "Identifier removed successfully.")
+        except Exception as e:
+            messages.error(request, f"Error removing identifier: {str(e)}")
+            
+        return redirect('people:supporter_detail', supporter_id=supporter.id)
+
+@method_decorator(never_cache, name='dispatch')
+class IdentifierAddAPIView(LoginRequiredMixin, View):
+    """
+    Handles addition of a new SupporterIdentifier.
+    """
+    def post(self, request, supporter_id):
+        supporter = get_object_or_404(Supporter, id=supporter_id)
+        if not (request.user.is_staff or request.user.is_superuser or supporter.assigned_agent == request.user):
+            messages.error(request, "Permission denied.")
+            return redirect('people:supporter_detail', supporter_id=supporter.id)
+
+        identifier_type = request.POST.get('identifier_type')
+        value = request.POST.get('value')
+        
+        if not identifier_type or not value:
+            messages.error(request, "Type and Value are required.")
+            return redirect('people:supporter_detail', supporter_id=supporter.id)
+            
+        try:
+            SupporterIdentifier.objects.create(
+                supporter=supporter,
+                identifier_type=identifier_type,
+                value=value.strip()
+            )
+            messages.success(request, "Identifier added successfully.")
+        except Exception as e:
+            if "UNIQUE constraint failed" in str(e):
+                messages.error(request, "This exact identifier is already registered.")
+            else:
+                messages.error(request, f"Error adding identifier: {str(e)}")
+                
+        return redirect('people:supporter_detail', supporter_id=supporter.id)
 
 
 class AdminRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -68,7 +152,10 @@ class AdminDashboardView(AdminRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         
         # Batch Health: Recent StatementImportBatch records
-        context['recent_batches'] = StatementImportBatch.objects.all().order_by('-uploaded_at')[:5]
+        context['recent_batches'] = StatementImportBatch.objects.annotate(
+            start_date=Min('transactions__transaction_date'),
+            end_date=Max('transactions__transaction_date')
+        ).order_by('-uploaded_at')[:5]
         
         # Financial Bottlenecks: Total value of all UNMATCHED transactions
         bottleneck_aggr = BankTransaction.objects.filter(
@@ -82,3 +169,31 @@ class AdminDashboardView(AdminRequiredMixin, TemplateView):
         ).order_by('-timestamp')[:10]
         
         return context
+
+
+@method_decorator(never_cache, name='dispatch')
+class LogInteractionAPIView(LoginRequiredMixin, View):
+    """
+    API endpoint for logging an interaction with a supporter.
+    """
+    def post(self, request, *args, **kwargs):
+        try:
+            data = json.loads(request.body)
+            supporter_id = data.get('supporter_id')
+            notes = data.get('notes')
+
+            if not supporter_id or not notes:
+                return JsonResponse({'success': False, 'error': 'Supporter and notes are required.'}, status=400)
+
+            # Ensure the supporter is assigned to the current user
+            supporter = get_object_or_404(Supporter, id=supporter_id, assigned_agent=request.user)
+
+            CanvassInteraction.objects.create(
+                supporter=supporter,
+                agent=request.user,
+                notes=notes
+            )
+
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)

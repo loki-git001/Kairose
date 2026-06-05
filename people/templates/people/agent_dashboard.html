@@ -30,7 +30,7 @@
             </div>
             <div class="card-body d-flex flex-column justify-content-center">
                 <button type="button" class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#createSupporterModal">Add Supporter</button>
-                <button class="btn btn-outline-primary">Log Interaction</button>
+                <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#logInteractionModal">Log Interaction</button>
             </div>
         </div>
     </div>
@@ -145,6 +145,80 @@
   </div>
 </div>
 
+<!-- Log Interaction Modal -->
+<div class="modal fade" id="logInteractionModal" tabindex="-1" aria-labelledby="logInteractionModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title" id="logInteractionModalLabel">Log Interaction</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-md-6">
+            <form id="log-interaction-form">
+              <div class="mb-3">
+                <label for="interaction_supporter" class="form-label">Supporter *</label>
+                <select class="form-select" id="interaction_supporter" required>
+                    <option value="">Select a Supporter...</option>
+                    {% for supporter in supporters %}
+                    <option value="{{ supporter.id }}">{{ supporter.first_name }} {{ supporter.last_name }}</option>
+                    {% endfor %}
+                </select>
+              </div>
+              <div class="mb-3">
+                <label for="interaction_notes" class="form-label">Interaction Notes *</label>
+                <textarea class="form-control" id="interaction_notes" rows="6" required placeholder="Summarize the call, email, or meeting..."></textarea>
+              </div>
+            </form>
+            <div id="interaction-modal-error" class="text-danger small d-none mt-2"></div>
+          </div>
+          
+          <div class="col-md-6 border-start">
+            <div id="interaction-supporter-placeholder" class="text-center text-muted mt-4">
+                <i class="bi bi-person-bounding-box" style="font-size: 3rem;"></i>
+                <p class="mt-2">Select a supporter to view details</p>
+            </div>
+            <div id="interaction-supporter-details" style="display: none;">
+                <h6 class="border-bottom pb-2 mb-3">Supporter Profile</h6>
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-4 text-muted">First Name</dt>
+                    <dd class="col-sm-8 fw-medium" id="int-detail-first-name"></dd>
+
+                    <dt class="col-sm-4 text-muted">Last Name</dt>
+                    <dd class="col-sm-8 fw-medium" id="int-detail-last-name"></dd>
+
+                    <dt class="col-sm-4 text-muted">Email</dt>
+                    <dd class="col-sm-8 fw-medium" id="int-detail-email"></dd>
+
+                    <dt class="col-sm-4 text-muted">Phone</dt>
+                    <dd class="col-sm-8 fw-medium" id="int-detail-phone"></dd>
+
+                    <dt class="col-sm-4 text-muted">Address</dt>
+                    <dd class="col-sm-8 fw-medium" id="int-detail-address"></dd>
+                    
+                    <dt class="col-sm-4 text-muted mt-2">Badges</dt>
+                    <dd class="col-sm-8 mt-2">
+                        <span class="badge bg-secondary me-1" id="int-detail-is-donor">Not a Donor</span>
+                        <span class="badge bg-secondary" id="int-detail-is-subscriber">Not a Subscriber</span>
+                    </dd>
+                </dl>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-save-interaction">Save Interaction</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Soft warning for phone number
@@ -203,6 +277,108 @@ document.addEventListener('DOMContentLoaded', function() {
                 window.location.reload();
             } else {
                 errorDiv.textContent = data.error;
+                errorDiv.classList.remove('d-none');
+            }
+        })
+        .catch(err => {
+            errorDiv.textContent = "A network error occurred.";
+            errorDiv.classList.remove('d-none');
+        });
+    });
+
+    // Modal Log Interaction logic
+    let logInteractionTomSelect = null;
+    const logInteractionModalEl = document.getElementById('logInteractionModal');
+    
+    function fetchInteractionSupporterDetails(supporterId) {
+        const detailsDiv = document.getElementById('interaction-supporter-details');
+        const placeholderDiv = document.getElementById('interaction-supporter-placeholder');
+        
+        if (!supporterId) {
+            detailsDiv.style.display = 'none';
+            placeholderDiv.style.display = 'block';
+            return;
+        }
+
+        fetch(`/finance/api/supporter/${supporterId}/details/`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('int-detail-first-name').textContent = data.data.first_name || '-';
+                    document.getElementById('int-detail-last-name').textContent = data.data.last_name || '-';
+                    document.getElementById('int-detail-email').textContent = data.data.email || '-';
+                    document.getElementById('int-detail-phone').textContent = data.data.phone_number || '-';
+                    document.getElementById('int-detail-address').textContent = data.data.address || '-';
+                    
+                    const donorBadge = document.getElementById('int-detail-is-donor');
+                    donorBadge.textContent = data.data.is_donor ? 'Donor' : 'Not a Donor';
+                    donorBadge.className = data.data.is_donor ? 'badge bg-success me-1' : 'badge bg-secondary me-1';
+
+                    const subBadge = document.getElementById('int-detail-is-subscriber');
+                    subBadge.textContent = data.data.is_subscriber ? 'Subscriber' : 'Not a Subscriber';
+                    subBadge.className = data.data.is_subscriber ? 'badge bg-success' : 'badge bg-secondary';
+
+                    placeholderDiv.style.display = 'none';
+                    detailsDiv.style.display = 'block';
+                }
+            });
+    }
+
+    logInteractionModalEl.addEventListener('show.bs.modal', function () {
+        if (!logInteractionTomSelect) {
+            logInteractionTomSelect = new TomSelect('#interaction_supporter', {
+                create: false,
+                sortField: {
+                    field: "text",
+                    direction: "asc"
+                }
+            });
+            
+            logInteractionTomSelect.on('change', function(value) {
+                fetchInteractionSupporterDetails(value);
+            });
+        }
+    });
+    document.getElementById('btn-save-interaction').addEventListener('click', function() {
+        const errorDiv = document.getElementById('interaction-modal-error');
+        errorDiv.classList.add('d-none');
+
+        const supporterId = document.getElementById('interaction_supporter').value;
+        const notes = document.getElementById('interaction_notes').value;
+
+        if (!supporterId) {
+            errorDiv.textContent = "Please select a supporter.";
+            errorDiv.classList.remove('d-none');
+            return;
+        }
+
+        if (!notes.trim()) {
+            errorDiv.textContent = "Please enter interaction notes.";
+            errorDiv.classList.remove('d-none');
+            return;
+        }
+
+        const payload = {
+            supporter_id: supporterId,
+            notes: notes
+        };
+
+        fetch('{% url "people:api_log_interaction" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show a brief alert, then reload the page
+                alert("Interaction saved successfully!");
+                window.location.reload();
+            } else {
+                errorDiv.textContent = data.error || "An error occurred.";
                 errorDiv.classList.remove('d-none');
             }
         })

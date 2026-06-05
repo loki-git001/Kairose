@@ -16,22 +16,148 @@
                 <p><strong>Address:</strong> <br> {{ supporter.address|default:"N/A" }}</p>
                 <p><strong>Added On:</strong> <br> {{ supporter.created_at|date:"Y-m-d" }}</p>
                 
-                <div class="mt-3">
-                    <a href="{% url 'people:agent_dashboard' %}" class="btn btn-outline-secondary w-100">Back to Dashboard</a>
+                <div class="mt-4 d-flex gap-2">
+                    <a href="{% url 'people:agent_dashboard' %}" class="btn btn-outline-secondary w-50">Back</a>
+                    <button type="button" class="btn btn-primary w-50" data-bs-toggle="modal" data-bs-target="#editProfileModal">
+                        Edit Profile
+                    </button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Edit Profile Modal -->
+        <div class="modal fade" id="editProfileModal" tabindex="-1" aria-labelledby="editProfileModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <form method="post" action="{% url 'people:supporter_edit' supporter.id %}">
+                        {% csrf_token %}
+                        <div class="modal-header bg-primary text-white">
+                            <h5 class="modal-title" id="editProfileModalLabel">Edit Supporter Profile</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">First Name</label>
+                                    <input type="text" name="first_name" class="form-control" value="{{ supporter.first_name|default_if_none:'' }}" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Last Name</label>
+                                    <input type="text" name="last_name" class="form-control" value="{{ supporter.last_name|default_if_none:'' }}" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Email</label>
+                                <input type="email" name="email" class="form-control" value="{{ supporter.email|default_if_none:'' }}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Phone Number</label>
+                                <input type="text" name="phone_number" class="form-control" value="{{ supporter.phone_number|default_if_none:'' }}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Address</label>
+                                <textarea name="address" class="form-control" rows="3">{{ supporter.address|default_if_none:'' }}</textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save Changes</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Identifier Modal -->
+        <div class="modal fade" id="addIdentifierModal" tabindex="-1" aria-labelledby="addIdentifierModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <form method="post" action="{% url 'people:identifier_add' supporter.id %}">
+                        {% csrf_token %}
+                        <div class="modal-header bg-secondary text-white">
+                            <h5 class="modal-title" id="addIdentifierModalLabel">Add New Identifier</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label">Identifier Type</label>
+                                <select name="identifier_type" class="form-select" required>
+                                    <option value="" disabled selected>Select Type...</option>
+                                    <option value="UPI">UPI ID</option>
+                                    <option value="BANK_ACC">Bank Account Number</option>
+                                    <option value="PHONE">Phone Number</option>
+                                    <option value="EMAIL">Email Address</option>
+                                    <option value="CUSTOM">Custom Reference</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Value</label>
+                                <input type="text" name="value" class="form-control" required placeholder="e.g. 1234567890@ybl">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Add Identifier</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Buttons -->
+        <div class="mb-3 d-flex gap-2">
+            <button type="button" class="btn btn-light shadow-sm border" id="btnFilterVerified" onclick="toggleFilter('verified')" data-active="false">
+                <span class="badge bg-success rounded-pill"><i class="bi bi-check-circle"></i></span> Verified
+            </button>
+            <button type="button" class="btn btn-light shadow-sm border" id="btnFilterUnverified" onclick="toggleFilter('unverified')" data-active="false">
+                <span class="badge bg-warning text-dark rounded-pill"><i class="bi bi-circle"></i></span> Not verified
+            </button>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Linked Identifiers</h5>
+                <button type="button" class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#addIdentifierModal">
+                    <i class="bi bi-plus-lg"></i> Add
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for identifier in supporter.identifiers.all %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center identifier-item" data-status="{% if identifier.is_verified %}verified{% else %}unverified{% endif %}">
+                            <div>
+                                <strong>{{ identifier.get_identifier_type_display }}:</strong><br>
+                                <span class="text-muted">{{ identifier.value }}</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-3">
+                                {% if identifier.is_verified %}
+                                    <span class="badge bg-success rounded-pill" title="Verified"><i class="bi bi-check-circle"></i></span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark rounded-pill" title="Unverified"><i class="bi bi-circle"></i></span>
+                                {% endif %}
+                                <form method="post" action="{% url 'people:identifier_delete' identifier.id %}" onsubmit="return confirm('Remove this identifier?');" style="margin: 0;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn-close" aria-label="Remove identifier"></button>
+                                </form>
+                            </div>
+                        </li>
+                    {% empty %}
+                        <li class="list-group-item text-muted text-center py-3">No identifiers linked.</li>
+                    {% endfor %}
+                </ul>
             </div>
         </div>
     </div>
     
     <div class="col-md-8">
-        <div class="card mb-4">
+        <div class="card mb-4 position-sticky" style="top: 80px;">
             <div class="card-header bg-light">
                 <h5 class="mb-0">Recent Allocations & Matches</h5>
             </div>
             <div class="card-body p-0">
-                <div class="table-responsive">
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
                     <table class="table mb-0">
-                        <thead>
+                        <thead class="sticky-top bg-light" style="z-index: 1;">
                             <tr>
                                 <th>Date</th>
                                 <th>Purpose</th>
@@ -56,5 +182,64 @@
             </div>
         </div>
     </div>
-</div>
+<script>
+let verifiedActive = false;
+let unverifiedActive = false;
+
+function toggleFilter(type) {
+    const btnV = document.getElementById('btnFilterVerified');
+    const btnU = document.getElementById('btnFilterUnverified');
+    
+    if (type === 'verified') {
+        verifiedActive = !verifiedActive;
+        if (verifiedActive) {
+            unverifiedActive = false;
+        }
+    } else {
+        unverifiedActive = !unverifiedActive;
+        if (unverifiedActive) {
+            verifiedActive = false;
+        }
+    }
+    
+    // Update Verified Button UI
+    if (verifiedActive) {
+        btnV.classList.remove('btn-light');
+        btnV.classList.add('btn-secondary', 'text-white');
+    } else {
+        btnV.classList.add('btn-light');
+        btnV.classList.remove('btn-secondary', 'text-white');
+    }
+    
+    // Update Unverified Button UI
+    if (unverifiedActive) {
+        btnU.classList.remove('btn-light');
+        btnU.classList.add('btn-secondary', 'text-white');
+    } else {
+        btnU.classList.add('btn-light');
+        btnU.classList.remove('btn-secondary', 'text-white');
+    }
+    
+    applyFilters();
+}
+
+function applyFilters() {
+    const items = document.querySelectorAll('.identifier-item');
+    
+    items.forEach(item => {
+        const isVerified = item.getAttribute('data-status') === 'verified';
+        
+        // If nothing is checked, or if both are checked, show all
+        if ((!verifiedActive && !unverifiedActive) || (verifiedActive && unverifiedActive)) {
+            item.style.setProperty('display', 'flex', 'important');
+        } else if (verifiedActive && isVerified) {
+            item.style.setProperty('display', 'flex', 'important');
+        } else if (unverifiedActive && !isVerified) {
+            item.style.setProperty('display', 'flex', 'important');
+        } else {
+            item.style.setProperty('display', 'none', 'important');
+        }
+    });
+}
+</script>
 {% endblock %}

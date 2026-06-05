@@ -25,6 +25,26 @@ class CharityBankAccount(models.Model):
         help_text=_("Uncheck to hide closed accounts from the upload menu."),
     )
 
+    @property
+    def get_auto_prefix(self):
+        ptype = self.parser_type
+        name_lower = self.name.lower()
+        if ptype == self.ParserType.FEDERAL_BANK:
+            if 'current' in name_lower:
+                return 'FBC'
+            elif 'saving' in name_lower:
+                return 'FBS'
+            return 'FBD' # Default Federal Bank
+        elif ptype == self.ParserType.BANK_OF_AMERICA:
+            return 'BOA'
+        elif ptype == self.ParserType.NRI:
+            return 'NRI'
+        elif ptype == self.ParserType.PAYPAL:
+            return 'PPL'
+        elif ptype == self.ParserType.VANCO:
+            return 'VCO'
+        raise ValueError("Invalid parser type") # Global fallback
+
     def __str__(self):
         return f"{self.name} - {self.account_number} ({self.currency})"
 
@@ -33,7 +53,6 @@ class StatementImportBatch(models.Model):
     class Status(models.TextChoices):
         PENDING = "PENDING", _("Pending Processing")
         PROCESSED = "PROCESSED", _("Processed Successfully")
-        FAILED = "FAILED", _("Failed/Errors")
 
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
@@ -51,9 +70,27 @@ class StatementImportBatch(models.Model):
         max_length=15, choices=Status.choices, default=Status.PENDING
     )
     total_rows = models.IntegerField(default=0)
+    batch_number = models.CharField(max_length=20, unique=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        if not self.batch_number and self.bank_account:
+            prefix = self.bank_account.get_auto_prefix
+                
+            count = StatementImportBatch.objects.filter(bank_account=self.bank_account).count()
+            
+            letter_idx = count // 999
+            if letter_idx < 26:
+                letter = chr(ord('A') + letter_idx)
+            else:
+                letter = "Z" # Fallback for extremely large numbers
+            
+            number = (count % 999) + 1
+            self.batch_number = f"{prefix}{letter}{number:03d}"
+            
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Batch {self.id} - {self.uploaded_at.strftime('%Y-%m-%d')}"
+        return f"Batch {self.batch_number or self.id} - {self.uploaded_at.strftime('%Y-%m-%d')}"
 
 
 class BankTransaction(models.Model):
