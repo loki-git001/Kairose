@@ -25,10 +25,6 @@ class StatementUploadForm(forms.Form):
 
 
 class TransactionMatchForm(forms.ModelForm):
-    """
-    Form for manually matching a transaction.
-    Agents can select a supporter assigned to them OR create a new supporter via popup.
-    """
     supporter = forms.ModelChoiceField(
         queryset=Supporter.objects.none(),
         widget=forms.Select(attrs={'class': 'form-select'}),
@@ -42,6 +38,17 @@ class TransactionMatchForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
-        self.transaction = kwargs.pop('transaction', None) 
+        self.transaction = kwargs.pop('transaction', None)
         super().__init__(*args, **kwargs)
-        self.fields['supporter'].queryset = Supporter.objects.all()
+
+        # Base filter: never show deleted supporters
+        qs = Supporter.objects.filter(is_deleted=False)
+
+        # Scope by agent (allow admins/staff to see all)
+        if self.user:
+            if not (self.user.is_staff or self.user.is_superuser):
+                qs = qs.filter(created_by=self.user)
+                # Note: If agents should also see supporters assigned to them, use:
+                # qs = qs.filter(Q(created_by=self.user) | Q(assigned_agent=self.user)).distinct()
+
+        self.fields['supporter'].queryset = qs.order_by('first_name', 'last_name')

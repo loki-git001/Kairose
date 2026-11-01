@@ -25,13 +25,15 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'people:admin_dashboard' %}">Admin Dashboard</a>
                     </li>
-                    {% else %}
+                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'finance:transactions' %}">Transactions</a>
                     </li>
-                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'people:agent_dashboard' %}">Agent Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'people:interactions' %}">Interactions</a>
                     </li>
                 </ul>
                 {% if request.user.is_authenticated %}

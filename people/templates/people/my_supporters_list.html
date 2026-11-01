@@ -1,0 +1,78 @@
+{% extends "finance/base.html" %}
+
+{% block content %}
+<div class="row mt-4">
+    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
+        <h2>My Supporters</h2>
+        <div>
+            <button type="button" class="btn btn-success me-2" data-bs-toggle="modal" data-bs-target="#createSupporterModal">
+                <i class="bi bi-plus-lg"></i> Create Supporter
+            </button>
+            <a href="{% url 'people:agent_dashboard' %}" class="btn btn-outline-secondary">Back to Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <form method="get" class="d-flex" id="search-form" onsubmit="return false;">
+            <input type="text" name="q" id="search-input" class="form-control me-2" placeholder="Search by name, phone, or identifiers..." value="{{ request.GET.q }}">
+        </form>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Supporters Created By You</h5>
+                <span class="badge bg-light text-dark">{{ supporters|length }} Total</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date Created</th>
+                                <th>Name</th>
+                                <th>Phone Number</th>
+                            </tr>
+                        </thead>
+                        <tbody id="supporters-table-body">
+                            {% include "people/partials/_supporter_table_rows.html" %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% include "people/partials/_create_supporter_modal.html" %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('search-input');
+    const tableBody = document.getElementById('supporters-table-body');
+    let debounceTimer;
+
+    searchInput.addEventListener('keyup', function() {
+        clearTimeout(debounceTimer);
+        const query = searchInput.value;
+        
+        debounceTimer = setTimeout(() => {
+            fetch(`{% url 'people:my_supporters' %}?q=${encodeURIComponent(query)}`, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.text())
+            .then(html => {
+                tableBody.innerHTML = html;
+            });
+        }, 300);
+    });
+});
+</script>
+
+{% endblock %}

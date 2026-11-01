@@ -28,3 +28,11 @@ urlpatterns = [
     path("finance/", include("finance.urls")),
     path("people/", include("people.urls")),
 ]
+
+from django.conf import settings
+from django.conf.urls.static import static
+import os
+
+if settings.DEBUG:
+    # Serve uploaded files in development
+    urlpatterns += static('/bank_statements/', document_root=os.path.join(settings.BASE_DIR, 'bank_statements'))

@@ -1,6 +1,32 @@
 {% extends "finance/base.html" %}
 
 {% block content %}
+<style>
+    .table-nowrap th, .table-nowrap td {
+        white-space: nowrap;
+    }
+    .sticky-col-status {
+        position: sticky;
+        right: 80px;
+        background-color: var(--bs-body-bg) !important;
+        z-index: 1;
+        border-left: 1px solid #dee2e6;
+    }
+    .sticky-col-action {
+        position: sticky;
+        right: 0;
+        background-color: var(--bs-body-bg) !important;
+        z-index: 1;
+        width: 80px;
+        min-width: 80px;
+        text-align: center;
+    }
+    .table-dark .sticky-col-status, .table-dark .sticky-col-action {
+        background-color: #212529 !important;
+        color: white;
+        border-left: 1px solid #454d55;
+    }
+</style>
 <div class="row mt-4">
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -9,7 +35,60 @@
                 <p class="text-muted mb-0">Below are all system-wide transactions.</p>
             </div>
             <div>
-                <form method="get" id="status-filter-form">
+                <form method="get" id="filter-form" class="d-flex flex-wrap gap-2 align-items-center">
+                    <!-- Search Bar -->
+                    <div class="input-group" style="width: 300px;">
+                        <input type="text" name="search" id="searchInput" class="form-control" placeholder="Search ref, name, narration...">
+                        <button class="btn btn-primary" type="button" aria-label="Search" onclick="document.getElementById('searchInput').focus();"><i class="bi bi-search"></i></button>
+                    </div>
+
+                    <!-- Purpose Dropdown -->
+                    <div class="dropdown">
+                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="purposeDropdown" data-bs-toggle="dropdown" aria-expanded="false" data-bs-auto-close="outside">
+                            Purpose
+                        </button>
+                        <div class="dropdown-menu p-3" aria-labelledby="purposeDropdown" style="min-width: 250px;">
+                            <h6 class="dropdown-header px-0">Filter by Purpose</h6>
+                            {% for purpose in purpose_choices %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="purpose" value="{{ purpose }}" id="purpose_{{ forloop.counter }}" {% if purpose in selected_purposes %}checked{% endif %}>
+                                    <label class="form-check-label" for="purpose_{{ forloop.counter }}">
+                                        {{ purpose }}
+                                    </label>
+                                </div>
+                            {% endfor %}
+                            <hr class="dropdown-divider">
+                            <div class="d-flex justify-content-between mt-2">
+                                <a href="{% url 'finance:transactions' %}" class="btn btn-sm btn-light">Clear</a>
+                                <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Type Dropdown -->
+                    <div class="dropdown">
+                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="typeDropdown" data-bs-toggle="dropdown" aria-expanded="false" data-bs-auto-close="outside">
+                            Type
+                        </button>
+                        <div class="dropdown-menu p-3" aria-labelledby="typeDropdown" style="min-width: 250px;">
+                            <h6 class="dropdown-header px-0">Filter by Type</h6>
+                            {% for value, label in type_choices %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="type" value="{{ value }}" id="type_{{ value }}" {% if value in selected_types %}checked{% endif %}>
+                                    <label class="form-check-label" for="type_{{ value }}">
+                                        {{ label }}
+                                    </label>
+                                </div>
+                            {% endfor %}
+                            <hr class="dropdown-divider">
+                            <div class="d-flex justify-content-between mt-2">
+                                <a href="{% url 'finance:transactions' %}" class="btn btn-sm btn-light">Clear</a>
+                                <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Status Dropdown -->
                     <div class="dropdown">
                         <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="statusDropdown" data-bs-toggle="dropdown" aria-expanded="false" data-bs-auto-close="outside">
                             Status
@@ -36,7 +115,7 @@
         </div>
         
         <div class="table-responsive">
-            <table class="table table-striped table-hover align-middle">
+            <table class="table table-striped table-hover align-middle table-nowrap">
                 <thead class="table-dark">
                     <tr>
                         <th>Date</th>
@@ -44,9 +123,11 @@
                         <th>Amount</th>
                         <th>Type</th>
                         <th>Extracted Name</th>
+                        <th>Matched Person</th>
+                        <th>Purpose</th>
                         <th>Narration</th>
-                        <th>Status</th>
-                        <th>Action</th>
+                        <th class="sticky-col-status">Status</th>
+                        <th class="sticky-col-action">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -57,8 +138,26 @@
                         <td class="fw-bold">{{ txn.amount }}</td>
                         <td><span class="badge bg-secondary">{{ txn.get_transaction_mode_display }}</span></td>
                         <td>{{ txn.extracted_name|default:"-" }}</td>
-                        <td><small title="{{ txn.raw_narration }}">{{ txn.raw_narration|truncatechars:50 }}</small></td>
                         <td>
+                            {% if txn.matched_supporter %}
+                                <a href="#" class="text-primary text-decoration-none fw-bold supporter-link" data-supporter-id="{{ txn.matched_supporter.id }}">
+                                    {{ txn.matched_supporter.first_name }} {{ txn.matched_supporter.last_name }}
+                                </a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            <ul class="list-unstyled mb-0">
+                            {% for allocation in txn.allocations.all %}
+                                <li><small class="badge bg-light text-dark border">{{ allocation.purpose|default:"No Purpose specified" }}</small></li>
+                            {% empty %}
+                                <li>-</li>
+                            {% endfor %}
+                            </ul>
+                        </td>
+                        <td><small title="{{ txn.raw_narration }}">{{ txn.raw_narration|truncatechars:50 }}</small></td>
+                        <td class="sticky-col-status">
                             {% if txn.match_status == 'UNMATCHED' %}
                                 <span class="badge bg-danger">{{ txn.get_match_status_display }}</span>
                             {% elif txn.match_status == 'MATCHED' %}
@@ -67,17 +166,23 @@
                                 <span class="badge bg-secondary">{{ txn.get_match_status_display }}</span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="sticky-col-action">
                             {% if txn.match_status == 'UNMATCHED' %}
-                                <a href="{% url 'finance:transaction_match' txn.id %}" class="btn btn-sm btn-primary">Match</a>
+                                <a href="{% url 'finance:transaction_match' txn.id %}?return_url={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-primary">Match</a>
+                            {% elif txn.match_status == 'IGNORED' and txn.handled_by == request.user %}
+                                <a href="{% url 'finance:transaction_match' txn.id %}?return_url={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                            {% elif txn.match_status == 'MATCHED' and txn.handled_by == request.user %}
+                                <a href="{% url 'finance:transaction_match' txn.id %}?return_url={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                            {% elif txn.match_status == 'MATCHED' and txn.matched_supporter.created_by == request.user %}
+                                <a href="{% url 'finance:transaction_match' txn.id %}?return_url={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-secondary">Edit</a>
                             {% else %}
-                                <a href="{% url 'finance:transaction_match' txn.id %}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                                <button class="btn btn-sm btn-outline-secondary" disabled title="You do not have permission to edit this transaction.">Locked</button>
                             {% endif %}
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">No transactions found for the selected filters.</td>
+                        <td colspan="10" class="text-center text-muted py-4">No transactions found for the selected filters.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -85,5 +190,155 @@
         </div>
     </div>
 </div>
+
+<!-- Supporter Details Modal -->
+<div class="modal fade" id="supporterDetailsModal" tabindex="-1" aria-labelledby="supporterDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="supporterDetailsModalLabel">Supporter Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="supporter-details-loading" class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <div id="supporter-details-content" class="d-none">
+                    <h4 id="sd-name" class="mb-3"></h4>
+                    <p><strong>Email:</strong> <span id="sd-email"></span></p>
+                    <p><strong>Phone:</strong> <span id="sd-phone"></span></p>
+                    <p><strong>Address:</strong> <span id="sd-address"></span></p>
+                    <p><strong>Status:</strong> <span id="sd-status"></span></p>
+                </div>
+                <div id="supporter-details-error" class="d-none text-danger text-center py-3">
+                    Failed to load supporter details.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modalEl = document.getElementById('supporterDetailsModal');
+    const modal = new bootstrap.Modal(modalEl);
+    const loadingDiv = document.getElementById('supporter-details-loading');
+    const contentDiv = document.getElementById('supporter-details-content');
+    const errorDiv = document.getElementById('supporter-details-error');
+
+    document.querySelectorAll('.supporter-link').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const supporterId = this.getAttribute('data-supporter-id');
+            
+            // Reset modal state
+            loadingDiv.classList.remove('d-none');
+            contentDiv.classList.add('d-none');
+            errorDiv.classList.add('d-none');
+            
+            // Show modal
+            modal.show();
+
+            // Fetch details
+            fetch(`/finance/api/supporter/${supporterId}/details/`)
+                .then(response => {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    loadingDiv.classList.add('d-none');
+                    if (data.success) {
+                        document.getElementById('sd-name').textContent = data.name;
+                        document.getElementById('sd-email').textContent = data.email || 'N/A';
+                        document.getElementById('sd-phone').textContent = data.phone || 'N/A';
+                        document.getElementById('sd-address').textContent = data.address || 'N/A';
+                        
+                        let statuses = [];
+                        if (data.is_donor) statuses.push('<span class="badge bg-success me-1">Donor</span>');
+                        if (data.is_subscriber) statuses.push('<span class="badge bg-info text-dark">Subscriber</span>');
+                        if (statuses.length === 0) statuses.push('<span class="badge bg-secondary">Prospect</span>');
+                        
+                        document.getElementById('sd-status').innerHTML = statuses.join('');
+                        
+                        contentDiv.classList.remove('d-none');
+                    } else {
+                        errorDiv.classList.remove('d-none');
+                        errorDiv.textContent = data.error || 'Failed to load details.';
+                    }
+                })
+                .catch(error => {
+                    loadingDiv.classList.add('d-none');
+                    errorDiv.classList.remove('d-none');
+                });
+        });
+    });
+
+    // Fast client-side search
+    const searchInput = document.getElementById('searchInput');
+    const tableBody = document.querySelector('.table-responsive tbody');
+    
+    if (searchInput && tableBody) {
+        // Populate from URL to persist across dropdown filter submits
+        const urlParams = new URLSearchParams(window.location.search);
+        const searchVal = urlParams.get('search');
+        if (searchVal) {
+            searchInput.value = searchVal;
+        }
+
+        const filterRows = function() {
+            const query = searchInput.value.toLowerCase().trim();
+            const rows = tableBody.querySelectorAll('tr:not(.no-results-row)');
+            let hasVisible = false;
+            
+            rows.forEach(row => {
+                // Skip the server-rendered empty row if it exists
+                if (row.querySelector('td[colspan]')) return;
+                
+                if (!query) {
+                    row.style.display = '';
+                    hasVisible = true;
+                    return;
+                }
+                
+                const text = row.textContent.toLowerCase();
+                if (text.includes(query)) {
+                    row.style.display = '';
+                    hasVisible = true;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // Handle client-side empty state
+            let emptyRow = tableBody.querySelector('.no-results-row');
+            if (!hasVisible && Array.from(rows).some(r => !r.querySelector('td[colspan]'))) {
+                if (!emptyRow) {
+                    emptyRow = document.createElement('tr');
+                    emptyRow.className = 'no-results-row';
+                    emptyRow.innerHTML = '<td colspan="10" class="text-center text-muted py-4">No transactions match your search.</td>';
+                    tableBody.appendChild(emptyRow);
+                } else {
+                    emptyRow.style.display = '';
+                }
+            } else if (emptyRow) {
+                emptyRow.style.display = 'none';
+            }
+        };
+
+        // Trigger on input (no debounce needed for DOM filtering)
+        searchInput.addEventListener('input', filterRows);
+        
+        // Run once on load
+        if (searchInput.value) {
+            filterRows();
+        }
+    }
+});
+</script>
 
 {% endblock %}

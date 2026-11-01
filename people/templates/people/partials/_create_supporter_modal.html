@@ -1,0 +1,114 @@
+<!-- Create Supporter Modal -->
+<div class="modal fade" id="createSupporterModal" tabindex="-1" aria-labelledby="createSupporterModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title" id="createSupporterModalLabel">Create New Supporter</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="create-supporter-form">
+          <div class="mb-3">
+            <label for="new_first_name" class="form-label">First Name *</label>
+            <input type="text" class="form-control" id="new_first_name" required>
+          </div>
+          <div class="mb-3">
+            <label for="new_last_name" class="form-label">Last Name</label>
+            <input type="text" class="form-control" id="new_last_name">
+          </div>
+          <div class="mb-3">
+            <label for="new_email" class="form-label">Email Address</label>
+            <input type="email" class="form-control" id="new_email">
+          </div>
+          <div class="mb-3">
+            <label for="new_phone" class="form-label">Phone Number</label>
+            <input type="text" class="form-control" id="new_phone">
+            <div id="phone-warning" class="text-warning small d-none mt-1"></div>
+          </div>
+          <div class="mb-3">
+            <label for="new_address" class="form-label">Address</label>
+            <textarea class="form-control" id="new_address" rows="2"></textarea>
+          </div>
+        </form>
+        <div id="modal-error" class="text-danger small d-none mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" id="btn-create-dashboard-supporter">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Soft warning for phone number
+    const newPhoneInput = document.getElementById('new_phone');
+    const phoneWarning = document.getElementById('phone-warning');
+    
+    if (newPhoneInput) {
+        newPhoneInput.addEventListener('input', function() {
+            const phone = this.value.trim();
+            if (phone.length >= 10) {
+                fetch(`/finance/api/check-phone/?phone_number=${encodeURIComponent(phone)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.exists) {
+                            phoneWarning.textContent = `Warning: This phone number is already linked to ${data.supporter_name}.`;
+                            phoneWarning.classList.remove('d-none');
+                        } else {
+                            phoneWarning.classList.add('d-none');
+                        }
+                    });
+            } else {
+                phoneWarning.classList.add('d-none');
+            }
+        });
+    }
+
+    // Modal Create logic
+    const btnCreate = document.getElementById('btn-create-dashboard-supporter');
+    if (btnCreate) {
+        btnCreate.addEventListener('click', function() {
+            const errorDiv = document.getElementById('modal-error');
+            errorDiv.classList.add('d-none');
+
+            const payload = {
+                first_name: document.getElementById('new_first_name').value,
+                last_name: document.getElementById('new_last_name').value,
+                email: document.getElementById('new_email').value,
+                phone_number: document.getElementById('new_phone').value,
+                address: document.getElementById('new_address').value
+            };
+
+            if (!payload.first_name) {
+                errorDiv.textContent = "First Name is required.";
+                errorDiv.classList.remove('d-none');
+                return;
+            }
+
+            fetch('{% url "finance:api_create_supporter" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    errorDiv.textContent = data.error;
+                    errorDiv.classList.remove('d-none');
+                }
+            })
+            .catch(err => {
+                errorDiv.textContent = "A network error occurred.";
+                errorDiv.classList.remove('d-none');
+            });
+        });
+    }
+});
+</script>

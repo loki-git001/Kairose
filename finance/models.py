@@ -70,6 +70,7 @@ class StatementImportBatch(models.Model):
         max_length=15, choices=Status.choices, default=Status.PENDING
     )
     total_rows = models.IntegerField(default=0)
+    skipped_rows = models.IntegerField(default=0)
     batch_number = models.CharField(max_length=20, unique=True, blank=True)
 
     def save(self, *args, **kwargs):
@@ -114,6 +115,13 @@ class BankTransaction(models.Model):
     batch = models.ForeignKey(
         StatementImportBatch, on_delete=models.CASCADE, related_name="transactions"
     )
+    bank_account = models.ForeignKey(
+        CharityBankAccount,
+        on_delete=models.CASCADE,
+        related_name="bank_transactions",
+        null=True,
+        blank=True,
+    )
 
     transaction_date = models.DateField()
     amount = models.DecimalField(max_digits=12, decimal_places=2)
@@ -136,6 +144,14 @@ class BankTransaction(models.Model):
         blank=True,
         related_name="bank_transactions",
     )
+    handled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="handled_transactions",
+        help_text=_("The agent who matched or ignored this transaction."),
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -143,7 +159,7 @@ class BankTransaction(models.Model):
         ordering = ["-transaction_date", "-created_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["bank_reference", "amount", "transaction_date"],
+                fields=["bank_account", "bank_reference", "amount", "transaction_date"],
                 name="unique_bank_transaction",
             )
         ]
@@ -175,6 +191,7 @@ class TransactionAuditLog(models.Model):
         IMPORTED = "IMPORTED", _("Statement Imported")
         MATCHED = "MATCHED", _("Transaction Matched")
         UNMATCHED = "UNMATCHED", _("Agent Unmatched")
+        IGNORED = "IGNORED", _("Agent Ignored")
         ALLOCATION_CHANGED = "ALLOC_CHANGED", _("Allocation Changed")
 
     transaction = models.ForeignKey(

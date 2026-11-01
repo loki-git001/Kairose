@@ -38,15 +38,10 @@ def process_statement_batch(batch_id):
         if not parsed_data:
             return {"skipped_count": 0, "inserted_count": 0}
             
-        # Get date range to optimize DB query
-        min_date = min(row['transaction_date'] for row in parsed_data)
-        max_date = max(row['transaction_date'] for row in parsed_data)
-        
-        # Fetch existing fingerprints within the date range
+        # Fetch existing transactions for this SPECIFIC bank account
         existing_txs = BankTransaction.objects.filter(
-            transaction_date__range=[min_date, max_date]
+            bank_account=batch.bank_account
         ).values_list('bank_reference', 'amount', 'transaction_date')
-        
         existing_fingerprints = set(existing_txs)
         
         transactions_to_create = []
@@ -63,6 +58,7 @@ def process_statement_batch(batch_id):
                 transactions_to_create.append(
                     BankTransaction(
                         batch=batch,
+                        bank_account=batch.bank_account,
                         transaction_date=row['transaction_date'],
                         amount=row['amount'],
                         bank_reference=row['bank_reference'],
@@ -86,6 +82,7 @@ def process_statement_batch(batch_id):
                 
             batch.status = StatementImportBatch.Status.PROCESSED
             batch.total_rows = len(transactions_to_create)
+            batch.skipped_rows = skipped_count
             batch.save()
 
         # No longer triggering auto-matcher here since it is now a UI-based suggestion

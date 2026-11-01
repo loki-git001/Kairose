@@ -1,7 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db import transaction
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
@@ -123,16 +123,38 @@ class AgentTransactionsView(LoginRequiredMixin, ListView):
     context_object_name = 'transactions'
 
     def get_queryset(self):
-        qs = BankTransaction.objects.select_related('batch__bank_account')
+        qs = BankTransaction.objects.select_related(
+            'batch__bank_account',
+            'matched_supporter',
+            'handled_by',
+            'matched_supporter__created_by'
+        ).prefetch_related('allocations')
         statuses = self.request.GET.getlist('status')
+        types = self.request.GET.getlist('type')
+        purposes = self.request.GET.getlist('purpose')
+        
         if statuses:
             qs = qs.filter(match_status__in=statuses)
+        if types:
+            qs = qs.filter(transaction_mode__in=types)
+        if purposes:
+            qs = qs.filter(allocations__purpose__in=purposes).distinct()
         return qs
         
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        
+        existing_purposes = list(LedgerAllocation.objects.values_list('purpose', flat=True).distinct())
+        default_purposes = ["Charity Donation", "Magazine Subscription"]
+        all_purposes = sorted(list(set(existing_purposes + default_purposes)))
+        
         context['status_choices'] = BankTransaction.MatchStatus.choices
+        context['type_choices'] = BankTransaction.TransactionMode.choices
+        context['purpose_choices'] = all_purposes
+        
         context['selected_statuses'] = self.request.GET.getlist('status')
+        context['selected_types'] = self.request.GET.getlist('type')
+        context['selected_purposes'] = self.request.GET.getlist('purpose')
         return context
 
 
@@ -160,7 +182,9 @@ class TransactionMatchView(LoginRequiredMixin, CreateView):
         is_new = False
         suggested_supporter_id = None
         
-        if txn.extracted_identifier:
+        if txn.matched_supporter_id:
+            suggested_supporter_id = txn.matched_supporter_id
+        elif txn.extracted_identifier:
             is_new = not SupporterIdentifier.objects.filter(value=txn.extracted_identifier).exists()
             if not is_new:
                 # Find the existing supporter
@@ -184,7 +208,7 @@ class TransactionMatchView(LoginRequiredMixin, CreateView):
         
         # Get distinct purposes for the dropdown
         existing_purposes = list(LedgerAllocation.objects.values_list('purpose', flat=True).distinct())
-        default_purposes = ["Charity Donation", "Magazine Subscription", "Other"]
+        default_purposes = ["Charity Donation", "Magazine Subscription"]
         all_purposes = list(set(existing_purposes + default_purposes))
         context['purposes'] = sorted(all_purposes)
 
@@ -195,6 +219,49 @@ class TransactionMatchView(LoginRequiredMixin, CreateView):
 
     def get_initial(self):
         return super().get_initial()
+        
+    def get_success_url(self):
+        return_url = self.request.GET.get('return_url')
+        if return_url and return_url.startswith('/'):
+            return return_url
+        return super().get_success_url()
+
+    def post(self, request, *args, **kwargs):
+        if 'action' in request.POST:
+            return_url = request.GET.get('return_url')
+            redirect_url = return_url if return_url and return_url.startswith('/') else 'finance:transactions'
+            
+            if request.POST['action'] == 'ignore':
+                txn = get_object_or_404(BankTransaction, pk=self.kwargs['transaction_id'])
+                with transaction.atomic():
+                    txn.match_status = BankTransaction.MatchStatus.IGNORED
+                    txn.handled_by = request.user
+                    txn.save()
+                    TransactionAuditLog.objects.create(
+                        transaction=txn,
+                        actor=request.user,
+                        action=TransactionAuditLog.Action.IGNORED,
+                        notes="Ignored by agent"
+                    )
+                messages.success(request, "Transaction marked as ignored.")
+                return redirect(redirect_url)
+            elif request.POST['action'] == 'unmatch':
+                txn = get_object_or_404(BankTransaction, pk=self.kwargs['transaction_id'])
+                with transaction.atomic():
+                    txn.match_status = BankTransaction.MatchStatus.UNMATCHED
+                    txn.matched_supporter = None
+                    txn.handled_by = None
+                    txn.save()
+                    LedgerAllocation.objects.filter(transaction=txn).delete()
+                    TransactionAuditLog.objects.create(
+                        transaction=txn,
+                        actor=self.request.user,
+                        action=TransactionAuditLog.Action.UNMATCHED,
+                        notes="Unmatched by agent"
+                    )
+                messages.success(request, "Transaction unmatched successfully.")
+                return redirect(redirect_url)
+        return super().post(request, *args, **kwargs)
 
     def form_valid(self, form):
         from decimal import Decimal
@@ -256,6 +323,7 @@ class TransactionMatchView(LoginRequiredMixin, CreateView):
             # 3. Update BankTransaction
             txn.match_status = BankTransaction.MatchStatus.MATCHED
             txn.matched_supporter = supporter
+            txn.handled_by = self.request.user
             txn.save()
 
             # 4. Update Supporter Donor/Subscriber Status
@@ -319,7 +387,8 @@ class CreateSupporterAjaxView(LoginRequiredMixin, View):
                 email=email if email else None,
                 phone_number=phone_number if phone_number else None,
                 address=address,
-                assigned_agent=request.user
+                assigned_agent=request.user,
+                created_by=request.user
             )
             
             if phone_number and not SupporterIdentifier.objects.filter(identifier_type=SupporterIdentifier.IdentifierType.PHONE_NUMBER, value=phone_number).exists():

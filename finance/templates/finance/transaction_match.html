@@ -2,6 +2,9 @@
 
 {% block content %}
 <div class="row mt-4">
+    <div class="col-12 mb-3">
+        <a href="{% if request.GET.return_url %}{{ request.GET.return_url }}{% else %}{% url 'finance:transactions' %}{% endif %}" class="btn btn-outline-secondary">&larr; Back to Transactions</a>
+    </div>
     <div class="col-md-6">
         <!-- Transaction Details -->
         <div class="card mb-4">
@@ -62,7 +65,13 @@
                     
                     <div class="d-flex justify-content-between mt-4">
                         <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#createSupporterModal">Create Supporter</button>
-                        <button type="submit" class="btn btn-primary" id="btn-submit-match" disabled>Match</button>
+                        <div>
+                            {% if transaction.match_status == 'MATCHED' %}
+                                <button type="submit" name="action" value="unmatch" class="btn btn-warning me-2" formnovalidate onclick="return confirm('Are you sure you want to unmatch this transaction?');">Unmatch</button>
+                            {% endif %}
+                            <button type="submit" name="action" value="ignore" class="btn btn-danger me-2" formnovalidate onclick="return confirm('Are you sure you want to ignore this transaction?');">Ignore</button>
+                            <button type="submit" name="action" value="match" class="btn btn-primary" id="btn-submit-match" disabled>Match</button>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -421,6 +430,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     matchForm.addEventListener('submit', function(e) {
         if (!isUpi || modalHandled) return;
+        
+        // Only show the link modal if the user is actually trying to MATCH
+        if (e.submitter && e.submitter.value !== 'match') {
+            return;
+        }
 
         let showUpi = hasIdentifier && isNewIdentifier;
         let showPhone = expectedPhone !== "" && !currentSupporterPhoneIdentifiers.includes(expectedPhone);
