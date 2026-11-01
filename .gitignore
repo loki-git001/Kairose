@@ -218,6 +218,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-
+# folders
+bank_statements/
 
 *.pyc

@@ -10,3 +10,6 @@ db.sqlite3
 
 .env
 .env.prod
+
+# folders
+bank_statements/
